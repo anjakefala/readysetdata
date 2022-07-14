@@ -1,4 +1,7 @@
 import sys
+import time
+import json
+import collections
 from pathlib import Path
 
 from readysetdata import get_optarg
@@ -39,11 +42,14 @@ class OutputTable:
                         if func.startswith('output_')]
 
     def __enter__(self):
+        self.fprogress = open('progress.jsonl', mode='w')
+        self.progresses = collections.defaultdict(int)
         return self
 
     def __exit__(self, type, value, tb):
         for o in self.outputters:
             o.finalize()
+        self.fprogress.close()
 
     @property
     def dbpath(self):
@@ -68,6 +74,11 @@ class OutputTable:
                 batch_dicts = self.rowbatch[:self.batch_size]
                 batch_tuples = [tuple(r.values()) for r in batch_dicts]
                 for outputter in self.outputters:
+                    before = time.time()
                     outputter.output_batch(batch_tuples, batch_dicts)
+                    now = time.time()
+                    t = type(outputter).__name__
+                    self.progresses[t] += now - before
+                    print(json.dumps(dict(n=len(batch_dicts), time=now-before, total_time=self.progresses[t], output=t)), file=self.fprogress)
 
                 del self.rowbatch[:self.batch_size]
